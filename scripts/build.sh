@@ -38,7 +38,10 @@ printf "| %-31s |\n" "[TIME ] $(date '+%Y-%m-%d %H:%M:%S')"
 echo "+---------------------------------+"
 
 # Compile
-if gcc main.c -o pache.out; then
+if gcc \
+    src/constants/page.c \
+    src/main.c \
+    -Iinclude -o pache.out; then
     printf "| %-31s |\n" "[SUCCESS] Compilation completed"
     echo "+---------------------------------+"
 else
