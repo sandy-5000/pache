@@ -41,7 +41,8 @@ echo "+---------------------------------+"
 if gcc \
     src/constants/globals.c \
     src/services/init_pache.c \
-    src/services/tcp_server.c \
+    src/services/tcp_server/select_server.c \
+    src/services/tcp_server/server.c \
     src/main.c \
     -Iinclude -o pache.out -lpthread; then
     printf "| %-31s |\n" "[SUCCESS] Compilation completed"

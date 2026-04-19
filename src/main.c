@@ -1,5 +1,5 @@
 #include "services/init_pache.h"
-#include "services/tcp_server.h"
+#include "services/tcp_server/server.h"
 #include <errno.h>
 #include <pthread.h>
 #include <signal.h>
@@ -8,7 +8,7 @@
 #include <sys/types.h>
 
 void *server_thread(void *arg) {
-    start_tcp_select_server();
+    start_tcp_server();
     return NULL;
 }
 

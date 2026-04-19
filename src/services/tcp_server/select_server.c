@@ -79,7 +79,7 @@ void close_all_connections() {
     printf("pache: server stopped cleanly\n");
 }
 
-void handle_sigint(int sig) {
+void select_handle_sigint(int sig) {
     running = 0;
 
     int sock = socket(AF_INET, SOCK_STREAM, 0);
@@ -95,7 +95,7 @@ void handle_sigint(int sig) {
     close(sock);
 }
 
-void start_tcp_select_server() {
+void start_select_tcp_server() {
 
     server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (server_fd < 0) {
