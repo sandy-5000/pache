@@ -39,9 +39,11 @@ echo "+---------------------------------+"
 
 # Compile
 if gcc \
-    src/constants/page.c \
+    src/constants/globals.c \
+    src/services/init_pache.c \
+    src/services/tcp_server.c \
     src/main.c \
-    -Iinclude -o pache.out; then
+    -Iinclude -o pache.out -lpthread; then
     printf "| %-31s |\n" "[SUCCESS] Compilation completed"
     echo "+---------------------------------+"
 else

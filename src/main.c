@@ -1,22 +1,33 @@
-#include "constants/page.h"
+#include "services/init_pache.h"
+#include "services/tcp_server.h"
 #include <errno.h>
+#include <pthread.h>
+#include <signal.h>
 #include <stdio.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 
-int main() {
-    const char *dir = "p_cache";
+void *server_thread(void *arg) {
+    start_tcp_select_server();
+    return NULL;
+}
 
-    if (mkdir(dir, 0755) == -1) {
-        if (errno != EEXIST) {
-            perror("mkdir failed");
-            return 1;
-        }
+int main() {
+
+    signal(SIGINT, handle_sigint);
+
+    if (create_pache()) {
+        return 1;
     }
 
-    printf("Persistant Cache - **pache!**\n");
-    printf("Page Size - %d\n", PAGE_SIZE);
-    printf("Directory '%s' ready\n", dir);
+    pthread_t tid;
+
+    if (pthread_create(&tid, NULL, server_thread, NULL) != 0) {
+        perror("pthread_create failed");
+        return 1;
+    }
+
+    pthread_join(tid, NULL);
 
     return 0;
 }
