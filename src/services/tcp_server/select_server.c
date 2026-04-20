@@ -13,7 +13,7 @@
 volatile sig_atomic_t running = 1;
 
 struct server_state {
-    int server_fd, max_fd, new_fd;
+    int server_fd, max_fd;
     struct sockaddr_in server_addr, client_addr;
     fd_set master_set, read_set;
     int client_count;
@@ -22,26 +22,24 @@ struct server_state {
 
 int add_new_connection(struct server_state *context) {
     socklen_t addrlen = sizeof(context->client_addr);
-    context->new_fd = accept(
-        context->server_fd, (struct sockaddr *)&context->client_addr, &addrlen);
-    if (context->new_fd < 0) {
+    int new_fd = accept(context->server_fd, (struct sockaddr *)&context->client_addr, &addrlen);
+    if (new_fd < 0) {
         perror("pache: socket accept error");
         return 1;
     }
     if (context->client_count >= MAX_CLIENTS || !running) {
-        printf("Max clients reached. Rejecting fd=%d\n", context->new_fd);
-        close(context->new_fd);
+        printf("Max clients reached. Rejecting fd=%d\n", new_fd);
+        close(new_fd);
         return 2;
     }
 
-    FD_SET(context->new_fd, &context->master_set);
-    if (context->new_fd > context->max_fd) {
-        context->max_fd = context->new_fd;
+    FD_SET(new_fd, &context->master_set);
+    if (context->max_fd < new_fd) {
+        context->max_fd = new_fd;
     }
     ++context->client_count;
 
-    printf("pache: New connection fd=%d (clients=%d)\n", context->new_fd,
-           context->client_count);
+    printf("pache: New connection fd=%d (clients=%d)\n", new_fd, context->client_count);
     return 0;
 }
 
@@ -125,8 +123,7 @@ void start_select_tcp_server() {
     }
 
     int opt = 1;
-    if (setsockopt(context.server_fd, SOL_SOCKET, SO_REUSEADDR, &opt,
-                   sizeof(opt)) < 0) {
+    if (setsockopt(context.server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
         perror("pcache: setsockopt failed");
         exit(EXIT_FAILURE);
     }
@@ -135,8 +132,7 @@ void start_select_tcp_server() {
     context.server_addr.sin_addr.s_addr = INADDR_ANY;
     context.server_addr.sin_port = htons(TCP_SERVER_PORT);
 
-    if (bind(context.server_fd, (struct sockaddr *)&context.server_addr,
-             sizeof(context.server_addr)) < 0) {
+    if (bind(context.server_fd, (struct sockaddr *)&context.server_addr, sizeof(context.server_addr)) < 0) {
         perror("pache: socket bind failed");
         exit(EXIT_FAILURE);
     }
@@ -154,8 +150,7 @@ void start_select_tcp_server() {
 
     while (running) {
         context.read_set = context.master_set;
-        if (select(context.max_fd + 1, &context.read_set, NULL, NULL, NULL) <
-            0) {
+        if (select(context.max_fd + 1, &context.read_set, NULL, NULL, NULL) < 0) {
             if (errno == EINTR) {
                 continue;
             }
