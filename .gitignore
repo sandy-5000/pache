@@ -1,3 +1,8 @@
 *.out
 
 p_cache
+
+
+# Bun
+node_modules
+bun.lock

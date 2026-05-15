@@ -29,7 +29,7 @@ int add_new_connection(struct server_state *context) {
         return 1;
     }
     if (context->client_count >= MAX_CLIENTS || !running) {
-        printf("Max clients reached. Rejecting fd=%d\n", new_fd);
+        printf("Max clients reached (%d). Rejecting fd=%d\n", context->client_count, new_fd);
         close(new_fd);
         return 2;
     }
