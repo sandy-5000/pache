@@ -1,4 +1,5 @@
 #include "services/init_pache.h"
+#include "services/cache/cache_server.h"
 #include <errno.h>
 #include <stdio.h>
 #include <sys/stat.h>
@@ -17,5 +18,7 @@ int create_pache() {
     }
 
     printf("Directory '%s' ready\n", dir);
+
+    open_cache_file();
     return 0;
 }

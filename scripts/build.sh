@@ -43,6 +43,7 @@ if gcc \
     src/services/init_pache.c \
     src/services/tcp_server/select_server.c \
     src/services/tcp_server/server.c \
+    src/services/cache/cache_server.c \
     src/main.c \
     -Iinclude -o pache.out -lpthread; then
     printf "| %-31s |\n" "[SUCCESS] Compilation completed"

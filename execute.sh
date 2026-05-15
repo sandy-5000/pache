@@ -14,7 +14,7 @@ while getopts "bc" opt; do
 done
 
 if $CLEAN; then
-    [ -d p_cache ] && rmdir p_cache
+    # [ -d p_cache ] && rm -rf p_cache
     [ -f pache.out ] && rm pache.out
 fi
 

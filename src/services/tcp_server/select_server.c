@@ -1,4 +1,5 @@
 #include "constants/globals.h"
+#include "services/cache/cache_server.h"
 #include <arpa/inet.h>
 #include <errno.h>
 #include <stdio.h>
@@ -57,23 +58,28 @@ void read_buffer(int fd, struct server_state *context) {
     int bytes = read(fd, context->buffer, BUFFER_SIZE - 1);
     if (bytes <= 0) {
         remove_connection(fd, context);
-    } else {
-        context->buffer[bytes] = '\0';
-        printf("pache: fd %d: %s", fd, context->buffer);
-        while (sent < bytes) {
-            int n = send(fd, context->buffer + sent, bytes - sent, 0);
-            if (n < 0) {
-                if (errno == EINTR) {
-                    continue;
-                } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                    break;
-                }
-                remove_connection(fd, context);
-                return;
-            }
-            sent += n;
-        }
+        return;
     }
+    context->buffer[bytes] = '\0';
+    printf("pache: fd %d: %s", fd, context->buffer);
+
+    fetch_data(0, fd, context->buffer);
+
+    /*
+    while (sent < bytes) {
+        int n = send(fd, context->buffer + sent, bytes - sent, 0);
+        if (n < 0) {
+            if (errno == EINTR) {
+                continue;
+            } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                break;
+            }
+            remove_connection(fd, context);
+            return;
+        }
+        sent += n;
+    }
+    */
 }
 
 void close_all_connections(struct server_state *context) {
@@ -100,8 +106,10 @@ void select_handle_sigint(int sig) {
     running = 0;
 
     int sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (sock < 0)
+    if (sock < 0) {
+        printf("pache: failed to create a terminator socket\n");
         return;
+    }
 
     struct sockaddr_in addr = {0};
     addr.sin_family = AF_INET;
