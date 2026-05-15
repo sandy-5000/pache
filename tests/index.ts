@@ -15,9 +15,7 @@ const sendRequests = (sock: Bun.Socket<undefined>, clientId: number): void => {
     }
 
     const message = `request-${clientId}-${sent}\n`;
-
     console.log(`client ${clientId} sending: ${message.trim()}`);
-
     sock.write(message);
 
     sent++;
@@ -37,7 +35,6 @@ const createClient = (clientId: number): Promise<void> => {
       socket: {
         open(sock) {
           console.log(`client ${clientId} connected`);
-
           sendRequests(sock, clientId);
         },
 
@@ -47,13 +44,11 @@ const createClient = (clientId: number): Promise<void> => {
 
         close() {
           console.log(`client ${clientId} closed`);
-
           resolve();
         },
 
         error(_, error) {
           console.error(`client ${clientId} error`, error);
-
           reject(error);
         },
       },
@@ -69,7 +64,6 @@ const startTest = async (): Promise<void> => {
   }
 
   await Promise.all(clients);
-
   console.log("all tests completed");
 };
 
