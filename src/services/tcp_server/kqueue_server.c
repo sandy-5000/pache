@@ -2,24 +2,26 @@
 #include "services/cache/cache_server.h"
 #include <arpa/inet.h>
 #include <errno.h>
+#include <netinet/in.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <sys/select.h>
+#include <string.h>
+#include <sys/event.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
-#define MAX_CLIENTS 10
-#define BUFFER_SIZE 1024
+#define MAX_CLIENTS 65536
+#define BUFFER_SIZE 4096
+#define MAX_EVENTS 1024
 
 static volatile sig_atomic_t running = 1;
 
 struct server_state {
     int server_fd;
-    int max_fd;
+    int kq;
     struct sockaddr_in server_addr;
     struct sockaddr_in client_addr;
-    fd_set master_set;
-    fd_set read_set;
     int client_count;
     char buffer[BUFFER_SIZE];
 };
@@ -31,102 +33,74 @@ static int add_new_connection(struct server_state *context) {
         perror("pache: socket accept error");
         return 1;
     }
+
     if (context->client_count >= MAX_CLIENTS || !running) {
-        printf("pache: Max clients reached (%d). Rejecting fd=%d\n", context->client_count, new_fd);
+        printf("Max clients reached (%d). Rejecting fd=%d\n", context->client_count, new_fd);
         close(new_fd);
         return 2;
     }
 
-    FD_SET(new_fd, &context->master_set);
-    if (context->max_fd < new_fd) {
-        context->max_fd = new_fd;
+    struct kevent ev;
+    EV_SET(&ev, new_fd, EVFILT_READ, EV_ADD, 0, 0, NULL);
+    if (kevent(context->kq, &ev, 1, NULL, 0, NULL) < 0) {
+        perror("pache: kevent add client error");
+        close(new_fd);
+        return 3;
     }
     ++context->client_count;
 
-    printf("pache: New connection fd=%d (clients=%d)\n", new_fd, context->client_count);
+    printf("pache: new connection fd=%d clients=%d\n", new_fd, context->client_count);
     return 0;
 }
 
-static void remove_connection(int fd, struct server_state *context) {
-    if (FD_ISSET(fd, &context->master_set)) {
-        printf("pache: Client disconnected fd=%d\n", fd);
-        FD_CLR(fd, &context->master_set);
-        context->client_count--;
-    }
+static void remove_connection(int fd, struct server_state *ctx) {
+    printf("pache: client disconnected fd=%d\n", fd);
+    struct kevent ev;
+    EV_SET(&ev, fd, EVFILT_READ, EV_DELETE, 0, 0, NULL);
+    kevent(ctx->kq, &ev, 1, NULL, 0, NULL);
     close(fd);
+    if (ctx->client_count > 0) {
+        ctx->client_count--;
+    }
 }
 
 static void read_buffer(int fd, struct server_state *context) {
-    int sent = 0;
-    int bytes = read(fd, context->buffer, BUFFER_SIZE - 1);
+    ssize_t bytes = read(fd, context->buffer, BUFFER_SIZE - 1);
     if (bytes <= 0) {
         remove_connection(fd, context);
         return;
     }
     context->buffer[bytes] = '\0';
     printf("pache: fd %d: %s", fd, context->buffer);
-
     fetch_data(0, fd, context->buffer);
-
-    /*
-    while (sent < bytes) {
-        int n = send(fd, context->buffer + sent, bytes - sent, 0);
-        if (n < 0) {
-            if (errno == EINTR) {
-                continue;
-            } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                break;
-            }
-            remove_connection(fd, context);
-            return;
-        }
-        sent += n;
-    }
-    */
 }
 
-static void close_all_connections(struct server_state *context) {
-    printf("\npache: shutting down...\n");
-
-    close(context->server_fd);
-    FD_CLR(context->server_fd, &context->master_set);
-
-    for (int fd = 0; fd <= context->max_fd; ++fd) {
-        if (FD_ISSET(fd, &context->master_set)) {
-            if (fd == context->server_fd) {
-                printf("pache: closing server socket fd=%d\n", fd);
-            } else {
-                printf("pache: closing client fd=%d\n", fd);
-            }
-            close(fd);
-        }
-    }
-
-    printf("pache: server stopped cleanly\n");
-}
-
-void select_handle_sigint(int sig) {
+void kqueue_handle_sigint(int sig) {
     running = 0;
 
     int sock = socket(AF_INET, SOCK_STREAM, 0);
+
     if (sock < 0) {
-        printf("pache: failed to create a terminator socket\n");
+        printf("pache: failed to create terminator socket\n");
         return;
     }
 
     struct sockaddr_in addr = {0};
+
     addr.sin_family = AF_INET;
     addr.sin_port = htons(TCP_SERVER_PORT);
     addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 
     connect(sock, (struct sockaddr *)&addr, sizeof(addr));
+
     close(sock);
 }
 
-void start_select_tcp_server() {
+void start_kqueue_tcp_server() {
     struct server_state context;
 
-    context.client_count = 0;
+    memset(&context, 0, sizeof(context));
+
     context.server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (context.server_fd < 0) {
         perror("pcache: socket creation failed");
@@ -148,29 +122,54 @@ void start_select_tcp_server() {
         exit(EXIT_FAILURE);
     }
 
-    if (listen(context.server_fd, MAX_CLIENTS) < 0) {
+    if (listen(context.server_fd, SOMAXCONN) < 0) {
         perror("pache: socket listen failed");
+        exit(EXIT_FAILURE);
+    }
+
+    context.kq = kqueue();
+    if (context.kq < 0) {
+        perror("pache: kqueue init failed");
+        exit(EXIT_FAILURE);
+    }
+
+    struct kevent ev;
+    EV_SET(&ev, context.server_fd, EVFILT_READ, EV_ADD, 0, 0, NULL);
+    if (kevent(context.kq, &ev, 1, NULL, 0, NULL) < 0) {
+        perror("pache: kevent server add failed");
         exit(EXIT_FAILURE);
     }
 
     printf("Server listening on port %d...\n", TCP_SERVER_PORT);
 
-    FD_ZERO(&context.master_set);
-    FD_SET(context.server_fd, &context.master_set);
-    context.max_fd = context.server_fd;
+    struct kevent events[MAX_EVENTS];
 
     while (running) {
-        context.read_set = context.master_set;
-        if (select(context.max_fd + 1, &context.read_set, NULL, NULL, NULL) < 0) {
+
+        int nev = kevent(context.kq, NULL, 0, events, MAX_EVENTS, NULL);
+
+        if (!running) {
+            break;
+        }
+        if (nev < 0) {
             if (errno == EINTR) {
                 continue;
             }
-            perror("pache: socket select");
+            perror("pache: kevent wait");
             continue;
         }
 
-        for (int fd = 0; fd <= context.max_fd; ++fd) {
-            if (!FD_ISSET(fd, &context.read_set)) {
+        for (int i = 0; i < nev; ++i) {
+            int fd = (int)events[i].ident;
+            if (events[i].flags & EV_ERROR) {
+                if (fd == context.server_fd) {
+                    fprintf(stderr, "pache: server socket failed\n");
+                    running = 0;
+                    break;
+                } else {
+                    fprintf(stderr, "pache: kevent error: %s\n", strerror((int)events[i].data));
+                    remove_connection(fd, &context);
+                }
                 continue;
             }
 
@@ -182,5 +181,6 @@ void start_select_tcp_server() {
         }
     }
 
-    close_all_connections(&context);
+    close(context.server_fd);
+    close(context.kq);
 }

@@ -1,5 +1,4 @@
-const HOST = "127.0.0.1";
-const PORT = 5555;
+import { HOST, PORT } from "./constants";
 
 const CONNECTIONS = 10;
 const REQUESTS_PER_CONNECTION = 5;

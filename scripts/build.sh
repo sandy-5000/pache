@@ -42,6 +42,7 @@ if gcc \
     src/constants/globals.c \
     src/services/init_pache.c \
     src/services/tcp_server/select_server.c \
+    src/services/tcp_server/kqueue_server.c \
     src/services/tcp_server/server.c \
     src/services/cache/cache_server.c \
     src/main.c \

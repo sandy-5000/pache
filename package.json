@@ -1,6 +1,7 @@
 {
   "scripts": {
-    "test": "bun run tests/index.ts"
+    "test:select": "time bun run tests/select_test.ts",
+    "test:kqueue": "time bun run tests/kqueue_test.ts"
   },
   "dependencies": {},
   "devDependencies": {
