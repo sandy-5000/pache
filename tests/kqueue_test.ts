@@ -11,13 +11,12 @@ import { HOST, PORT } from "./constants";
  * ulimit -n 65536
  */
 
-const TOTAL_CLIENTS = 10000;
-const CONCURRENT_BATCH = 500;
-
-const REQUESTS_PER_CLIENT = 10;
+const TOTAL_CLIENTS = 1000;
+const CONCURRENT_BATCH = 1000;
+const REQUESTS_PER_CLIENT = 1000;
 const REQUEST_INTERVAL_MS = 1;
 
-const CLIENT_LIFETIME_MS = 5000;
+// const CLIENT_LIFETIME_MS = 5000;
 
 let connected = 0;
 let completed = 0;
@@ -42,6 +41,7 @@ const createPayload = (clientId: number, requestId: number): string => {
 const createKqueueClient = async (clientId: number): Promise<void> => {
   return new Promise((resolve) => {
     let requestsSent = 0;
+    let responsesReceived = 0;
 
     let closed = false;
 
@@ -53,36 +53,28 @@ const createKqueueClient = async (clientId: number): Promise<void> => {
         open(sock) {
           connected++;
 
-          const interval = setInterval(() => {
-            if (closed) {
-              clearInterval(interval);
-              return;
-            }
+          for (let i = 0; i < REQUESTS_PER_CLIENT; i++) {
+            const payload = createPayload(clientId, i);
 
-            if (requestsSent >= REQUESTS_PER_CLIENT) {
-              clearInterval(interval);
-
-              setTimeout(() => {
-                sock.end();
-              }, CLIENT_LIFETIME_MS);
-
-              return;
-            }
-
-            const payload = createPayload(clientId, requestsSent);
-
-            const written = sock.write(payload);
-
-            if (written) {
+            if (sock.write(payload)) {
               messagesSent++;
+              requestsSent++;
             }
-
-            requestsSent++;
-          }, REQUEST_INTERVAL_MS);
+          }
         },
 
-        data(_, data) {
+        data(sock, data) {
           messagesReceived += data.length;
+          const text = data.toString();
+
+          for (const ch of text) {
+            if (ch === "\n") {
+              responsesReceived++;
+            }
+          }
+          if (responsesReceived >= REQUESTS_PER_CLIENT) {
+            sock.end();
+          }
         },
 
         close() {

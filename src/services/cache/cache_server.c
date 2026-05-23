@@ -24,7 +24,15 @@ void open_cache_file() {
     printf("pache: Cache file opened: %s\n", path);
 }
 
-void fetch_data(int cache_id, int fd, char *key) {
+void fetch_data(int cache_id, int fd, char *key, int use_direct_send) {
+    if (use_direct_send) {
+        static const char response[] = "Hello, World\n";
+        ssize_t sent = send(fd, response, sizeof(response) - 1, 0);
+        if (sent < 0) {
+            perror("pache: send failed");
+        }
+        return;
+    }
 
 #ifdef __linux__
 

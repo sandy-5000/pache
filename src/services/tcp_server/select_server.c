@@ -66,7 +66,7 @@ static void read_buffer(int fd, struct server_state *context) {
     context->buffer[bytes] = '\0';
     printf("pache: fd %d: %s", fd, context->buffer);
 
-    fetch_data(0, fd, context->buffer);
+    fetch_data(0, fd, context->buffer, 1);
 
     /*
     while (sent < bytes) {

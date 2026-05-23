@@ -2,6 +2,7 @@
 #include "services/cache/cache_server.h"
 #include <arpa/inet.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <netinet/in.h>
 #include <signal.h>
 #include <stdio.h>
@@ -30,14 +31,18 @@ static int add_new_connection(struct server_state *context) {
     socklen_t addrlen = sizeof(context->client_addr);
     int new_fd = accept(context->server_fd, (struct sockaddr *)&context->client_addr, &addrlen);
     if (new_fd < 0) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            return 1;
+        }
         perror("pache: socket accept error");
-        return 1;
+        return 2;
     }
+    fcntl(new_fd, F_SETFL, O_NONBLOCK);
 
     if (context->client_count >= MAX_CLIENTS || !running) {
         printf("Max clients reached (%d). Rejecting fd=%d\n", context->client_count, new_fd);
         close(new_fd);
-        return 2;
+        return 3;
     }
 
     struct kevent ev;
@@ -45,16 +50,16 @@ static int add_new_connection(struct server_state *context) {
     if (kevent(context->kq, &ev, 1, NULL, 0, NULL) < 0) {
         perror("pache: kevent add client error");
         close(new_fd);
-        return 3;
+        return 4;
     }
     ++context->client_count;
 
-    printf("pache: new connection fd=%d clients=%d\n", new_fd, context->client_count);
+    // printf("pache: new connection fd=%d clients=%d\n", new_fd, context->client_count);
     return 0;
 }
 
 static void remove_connection(int fd, struct server_state *ctx) {
-    printf("pache: client disconnected fd=%d\n", fd);
+    // printf("pache: client disconnected fd=%d\n", fd);
     struct kevent ev;
     EV_SET(&ev, fd, EVFILT_READ, EV_DELETE, 0, 0, NULL);
     kevent(ctx->kq, &ev, 1, NULL, 0, NULL);
@@ -65,14 +70,27 @@ static void remove_connection(int fd, struct server_state *ctx) {
 }
 
 static void read_buffer(int fd, struct server_state *context) {
-    ssize_t bytes = read(fd, context->buffer, BUFFER_SIZE - 1);
-    if (bytes <= 0) {
-        remove_connection(fd, context);
-        return;
+    while (1) {
+        ssize_t bytes = read(fd, context->buffer, BUFFER_SIZE - 1);
+        if (bytes < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                break;
+            }
+            remove_connection(fd, context);
+            return;
+        }
+        if (bytes == 0) {
+            remove_connection(fd, context);
+            return;
+        }
+        context->buffer[bytes] = '\0';
+        for (ssize_t i = 0; i < bytes; i++) {
+            if (context->buffer[i] == '\n') {
+                // printf("pache: fd %d: %s", fd, context->buffer);
+                fetch_data(0, fd, context->buffer, 0);
+            }
+        }
     }
-    context->buffer[bytes] = '\0';
-    printf("pache: fd %d: %s", fd, context->buffer);
-    fetch_data(0, fd, context->buffer);
 }
 
 void kqueue_handle_sigint(int sig) {
@@ -106,6 +124,7 @@ void start_kqueue_tcp_server() {
         perror("pcache: socket creation failed");
         exit(EXIT_FAILURE);
     }
+    fcntl(context.server_fd, F_SETFL, O_NONBLOCK);
 
     int opt = 1;
     if (setsockopt(context.server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
@@ -174,7 +193,12 @@ void start_kqueue_tcp_server() {
             }
 
             if (fd == context.server_fd) {
-                add_new_connection(&context);
+                while (1) {
+                    int rc = add_new_connection(&context);
+                    if (rc != 0) {
+                        break;
+                    }
+                }
             } else {
                 read_buffer(fd, &context);
             }
